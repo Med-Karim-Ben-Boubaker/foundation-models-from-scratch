@@ -60,7 +60,15 @@ def main():
     logger.debug(f"Step numbers: {step_numbers}")
 
     plot_training_history(train_loss, val_loss, step_numbers)
-
+    
+    os.makedirs("artifacts", exist_ok=True)
+    model_path = os.path.join("artifacts", "model_and_optimizer.pth")
+    logger.info(f"Saving model to {model_path}")
+    torch.save({
+        "model": model.state_dict(),
+        "optimizer": opt.state_dict(),
+    }, model_path)
+    logger.info(f"Model saved to {model_path}")
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,16 @@
+[project]
+name = "llm-from-scratch"
+version = "0.1.0"
+description = "Building Large Language Models from scratch"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ipykernel",
+    "tiktoken",
+    "ruff",
+    "pyyaml",
+    "structlog",
+    "numpy",
+    "torch>=2.8.0",
+    "matplotlib",
+]

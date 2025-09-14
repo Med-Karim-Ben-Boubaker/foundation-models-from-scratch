@@ -1,0 +1,7 @@
+uv.lock
+.venv
+/data
+.ipynb_checkpoints
+.ruff_cache
+__pycache__
+.cursor

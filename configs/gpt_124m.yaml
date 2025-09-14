@@ -1,0 +1,21 @@
+model:
+  vocab_size: 50257
+  context_length: 128
+  emb_dim: 256
+  n_heads: 8
+  n_layers: 6
+  drop_rate: 0.1
+  qkv_bias: false
+  
+train:
+  batch_size: 16
+  lr: 0.0002
+  weight_decay: 0.01
+  num_epochs: 10
+  eval_freq: 2
+  eval_iter: 50
+  grad_accum_steps: 2
+  amp: true
+  device: cuda
+  seed: 123
+  num_workers: 2

@@ -6,3 +6,6 @@ uv.lock
 __pycache__
 .cursor
 artifacts
+client_secret.json
+token_*.pickle
+.mypy_cache

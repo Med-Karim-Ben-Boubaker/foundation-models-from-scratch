@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 def Create_Service(client_secret_file, api_name, api_version, scopes, headless=False):
-    logger.info(client_secret_file, api_name, api_version, scopes, sep="-")
+    logger.info(f"Creating service: {client_secret_file}-{api_name}-{api_version}-{scopes}")
     CLIENT_SECRET_FILE = client_secret_file
     API_SERVICE_NAME = api_name
     API_VERSION = api_version
@@ -66,7 +66,7 @@ def Create_Service(client_secret_file, api_name, api_version, scopes, headless=F
 
     try:
         service = build(API_SERVICE_NAME, API_VERSION, credentials=cred)
-        logger.info(API_SERVICE_NAME, "service created successfully")
+        logger.info(f"{API_SERVICE_NAME} service created successfully")
         return service
     except Exception as e:
         logger.info("Unable to connect.")

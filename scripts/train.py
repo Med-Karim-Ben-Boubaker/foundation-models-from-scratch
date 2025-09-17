@@ -25,10 +25,10 @@ def main():
     logger.info(f"Using device: {device}")
     
     # Check if data exists before downloading
-    if not os.path.exists("data/simple_wiki.train"):
+    if not os.path.exists("data/simple_wiki_cleaned.train"):
         logger.info("Downloading data...")
         drive = DriveManager(headless=True)
-        drive.download_file("training/babylm/train_10M/simple_wiki.train", "data/simple_wiki.train")
+        drive.download_file("training/babylm/train_10M/simple_wiki_cleaned.train", "data/simple_wiki_cleaned.train")
     
     with open("data/simple_wiki_cleaned.train", "r", encoding="utf-8") as fh:
         text = fh.read()

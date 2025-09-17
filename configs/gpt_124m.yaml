@@ -9,10 +9,10 @@ model:
   
 train:
   batch_size: 16
-  lr: 0.0002
+  lr: 0.002
   weight_decay: 0.01
-  num_epochs: 10
-  eval_freq: 2
+  num_epochs: 1
+  eval_freq: 1
   eval_iter: 50
   grad_accum_steps: 2
   amp: true

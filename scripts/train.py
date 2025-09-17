@@ -6,6 +6,7 @@ from src.models.gpt import GPTModel
 from src.data.dataloader import create_dataloader_v1
 from src.training.plotting import plot_training_history
 from src.training.trainer import train
+from cloud.drive_manager import DriveManager
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,11 +23,18 @@ def main():
 
     device = torch.device(tcfg.device if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
-    with open("data/the-verdict.txt", "r", encoding="utf-8") as fh:
+    
+    # Check if data exists before downloading
+    if not os.path.exists("data/simple_wiki.train"):
+        logger.info("Downloading data...")
+        drive = DriveManager(headless=True)
+        drive.download_file("training/babylm/train_10M/simple_wiki.train", "data/simple_wiki.train")
+    
+    with open("data/simple_wiki_cleaned.train", "r", encoding="utf-8") as fh:
         text = fh.read()
 
     train_loader = create_dataloader_v1(
-        text[: int(0.9 * len(text))],
+        text[: int(0.1 * len(text))],
         tcfg.batch_size,
         gcfg.context_length,
         gcfg.context_length,

@@ -30,7 +30,7 @@ def main():
 
     logger.info("Model loaded successfully")
 
-    prompt = "Once upon a time"
+    prompt = "Lucens was first mentioned"
 
     tokenizer = get_tokenizer()
     input_token_ids = text_to_token_ids(prompt, tokenizer)

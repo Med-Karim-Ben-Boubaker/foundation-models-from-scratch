@@ -19,4 +19,5 @@ dependencies = [
     "types-google-cloud-ndb>=2.3.0.20250317",
     "types-requests>=2.32.4.20250913",
     "google-auth-stubs>=0.3.0",
+    "tqdm>=4.67.1",
 ]

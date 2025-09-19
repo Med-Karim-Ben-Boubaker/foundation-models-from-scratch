@@ -25,19 +25,19 @@ def main():
     logger.info(f"Using device: {device}")
     
     # Check if data exists before downloading
-    if not os.path.exists("data/simple_wiki_cleaned.train"):
+    if not os.path.exists("data/training_data_with_special_tokens.txt"):
         logger.info("Downloading data...")
         drive = DriveManager(headless=True)
-        drive.download_file("training/babylm/train_10M/simple_wiki_cleaned.train", "data/simple_wiki_cleaned.train")
+        drive.download_file("training/babylm/train_10M/data/training_data_with_special_tokens.txt", "data/training_data_with_special_tokens.txt")
     
-    with open("data/simple_wiki_cleaned.train", "r", encoding="utf-8") as fh:
+    with open("data/training_data_with_special_tokens.txt", "r", encoding="utf-8") as fh:
         text = fh.read()
 
     train_loader = create_dataloader_v1(
-        text[: int(0.1 * len(text))],
+        text[: int(0.9 * len(text))],
         tcfg.batch_size,
         gcfg.context_length,
-        gcfg.context_length,
+        gcfg.context_length // 4,
         True,
         True,
         tcfg.num_workers,
@@ -46,7 +46,7 @@ def main():
         text[int(0.9 * len(text)) :],
         tcfg.batch_size,
         gcfg.context_length,
-        gcfg.context_length,
+        gcfg.context_length // 4,
         False,
         False,
         tcfg.num_workers,
@@ -67,7 +67,7 @@ def main():
     logger.debug(f"Val loss: {val_loss}")
     logger.debug(f"Step numbers: {step_numbers}")
 
-    plot_training_history(train_loss, val_loss, step_numbers)
+    # plot_training_history(train_loss, val_loss, step_numbers)
     
     os.makedirs("artifacts", exist_ok=True)
     model_path = os.path.join("artifacts", "model_and_optimizer.pth")

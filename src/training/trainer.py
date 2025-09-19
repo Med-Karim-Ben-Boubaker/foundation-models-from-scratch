@@ -1,5 +1,12 @@
+import os
+from typing import Callable, Optional, Tuple, List
+
 import torch
 from torch.amp import autocast, GradScaler
+from torch.utils.data import DataLoader
+from torch.optim import Optimizer
+from tqdm import tqdm
+from src.config import TrainConfig
 from src.training.evaluate import calc_loss_batch, calc_loss_loader
 from src.utils.logging import get_logger
 
@@ -7,14 +14,29 @@ logger = get_logger(__name__)
 
 
 def train(
-    model,
-    train_loader,
-    validation_loader,
-    optimizer,
-    device,
-    training_config,
-    on_step_callback=None,
-):
+    model: torch.nn.Module,
+    train_loader: DataLoader,
+    validation_loader: DataLoader,
+    optimizer: Optimizer,
+    device: torch.device,
+    training_config: TrainConfig,
+    on_step_callback: Optional[Callable[[int, float, int], None]] = None,
+) -> Tuple[int, int, List[float], List[float], List[int]]:
+    """Train a model with gradient accumulation, AMP, eval, and optional scheduler.
+
+    Args:
+        model: The PyTorch model to train.
+        train_loader: DataLoader that yields tuples of (input_tokens, target_tokens).
+        validation_loader: DataLoader used for periodic evaluation.
+        optimizer: Optimizer for updating model parameters.
+        device: Device to run training on.
+        training_config: Training hyperparameters and runtime config.
+        on_step_callback: Optional callback taking (step, loss, total_tokens) called each micro-batch.
+
+    Returns:
+        A tuple of (optimizer_update_step, total_tokens_processed, training_losses,
+        validation_losses, step_numbers).
+    """
     is_cuda = device.type == "cuda"
     mixed_precision_scaler = GradScaler("cuda", enabled=training_config.amp and is_cuda)
 
@@ -27,15 +49,40 @@ def train(
 
     model.to(device).train()
 
+
     logger.info(f"Starting training for {training_config.num_epochs} epochs...")
     logger.info(f"Gradient accumulation steps: {training_config.grad_accum_steps}")
     logger.info(f"Mixed precision training: {training_config.amp and is_cuda}")
 
-    for current_epoch in range(training_config.num_epochs):
+    # Create epoch progress bar
+    epoch_pbar = tqdm(
+        range(training_config.num_epochs),
+        desc="Epochs",
+        position=0,
+        leave=True
+    )
+
+    for current_epoch in epoch_pbar:
         epoch_training_loss = 0.0
         epoch_batches_processed = 0
 
-        for batch_index, (input_tokens, target_tokens) in enumerate(train_loader):
+        # Create batch progress bar for current epoch
+        batch_pbar = tqdm(
+            train_loader,
+            desc=f"Epoch {current_epoch + 1}/{training_config.num_epochs}",
+            position=1,
+            leave=False,
+            total=len(train_loader)
+        )
+
+        # Accumulation window stats for logging per optimizer update
+        window_loss_sum = 0.0
+        window_micro_batches = 0
+        # Throttle progress bar updates to reduce overhead
+        postfix_step_freq = max(1, int(os.environ.get("POSTFIX_STEP_FREQ", "10")))
+        clip_grad_norm = float(os.environ.get("CLIP_NORM", "1.0"))
+
+        for batch_index, (input_tokens, target_tokens) in enumerate(batch_pbar):
             with autocast("cuda", enabled=training_config.amp and is_cuda):
                 batch_loss = calc_loss_batch(input_tokens, target_tokens, model, device)
                 scaled_loss = batch_loss / training_config.grad_accum_steps
@@ -47,9 +94,13 @@ def train(
             ) % training_config.grad_accum_steps == 0
 
             if is_accumulation_step_complete:
+                # Gradient clipping (after unscale when using AMP)
+                if clip_grad_norm > 0:
+                    mixed_precision_scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+
                 mixed_precision_scaler.step(optimizer)
                 mixed_precision_scaler.update()
-
                 optimizer.zero_grad(set_to_none=True)
 
                 optimizer_update_step += 1
@@ -57,13 +108,20 @@ def train(
             batch_tokens = input_tokens.numel()
             total_tokens_processed += batch_tokens
 
-            epoch_training_loss += scaled_loss.item() * training_config.grad_accum_steps
+            # Track unscaled loss for correct averaging and epoch statistics
+            epoch_training_loss += batch_loss.item()
+            window_loss_sum += batch_loss.item()
+            window_micro_batches += 1
             epoch_batches_processed += 1
 
             if is_accumulation_step_complete:
-                # Always record training loss and step number
-                training_losses.append(scaled_loss.item())
+                # Record average loss over the accumulation window per optimizer update
+                avg_update_loss = window_loss_sum / max(1, window_micro_batches)
+                training_losses.append(avg_update_loss)
                 step_numbers.append(optimizer_update_step)
+                # Reset window stats
+                window_loss_sum = 0.0
+                window_micro_batches = 0
 
             if on_step_callback:
                 on_step_callback(
@@ -77,7 +135,11 @@ def train(
             )
 
             if should_evaluate:
-                logger.info(f"Evaluating at step {optimizer_update_step}...")
+                # Update batch progress bar to show evaluation
+                batch_pbar.set_postfix({
+                    'train_loss': f"{scaled_loss.item():.4f}",
+                    'status': 'evaluating...'
+                })
 
                 model.eval()
                 with torch.no_grad():
@@ -92,15 +154,61 @@ def train(
 
                 validation_losses.append(current_validation_loss)
 
-                logger.info(
-                    f"Step {optimizer_update_step:>6} | "
-                    f"Train Loss: {scaled_loss.item():.4f} | "
-                    f"Val Loss: {current_validation_loss:.4f} | "
-                    f"Tokens: {total_tokens_processed:>8}"
-                )
+                # Update progress bars with evaluation results
+                batch_pbar.set_postfix({
+                    'train_loss': f"{scaled_loss.item():.4f}",
+                    'val_loss': f"{current_validation_loss:.4f}",
+                    'step': optimizer_update_step,
+                    'tokens': f"{total_tokens_processed:,}"
+                })
+                
+                # Update epoch progress bar with latest metrics
+                epoch_pbar.set_postfix({
+                    'avg_train_loss': f"{epoch_training_loss / max(1, epoch_batches_processed):.4f}",
+                    'val_loss': f"{current_validation_loss:.4f}",
+                    'step': optimizer_update_step
+                })
             elif is_accumulation_step_complete:
-                # Add None for validation loss when not evaluating but at gradient step
-                validation_losses.append(None)
+                # Add NaN for validation loss when not evaluating but at gradient step
+                validation_losses.append(float("nan"))
+
+                # Throttled progress bar updates
+                if (optimizer_update_step % postfix_step_freq) == 0:
+                    batch_pbar.set_postfix({
+                        'train_loss': f"{(training_losses[-1] if training_losses else scaled_loss.item()):.4f}",
+                        'step': optimizer_update_step,
+                        'tokens': f"{total_tokens_processed:,}"
+                    })
+
+        # Flush leftover gradients if the last accumulation window is incomplete
+        if window_micro_batches > 0:
+            if clip_grad_norm > 0:
+                mixed_precision_scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+            mixed_precision_scaler.step(optimizer)
+            mixed_precision_scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+
+            optimizer_update_step += 1
+
+            avg_update_loss = window_loss_sum / max(1, window_micro_batches)
+            training_losses.append(avg_update_loss)
+            step_numbers.append(optimizer_update_step)
+            # For alignment, append NaN for val loss unless we evaluate below
+            validation_losses.append(float("nan"))
+
+            # Optional evaluation if step aligns with eval frequency
+            if (optimizer_update_step % training_config.eval_freq) == 0:
+                model.eval()
+                with torch.no_grad():
+                    current_validation_loss = calc_loss_loader(
+                        validation_loader,
+                        model,
+                        device,
+                        num_batches=training_config.eval_iter,
+                    )
+                model.train()
+                validation_losses[-1] = current_validation_loss
 
         average_epoch_loss = epoch_training_loss / max(1, epoch_batches_processed)
 
@@ -111,13 +219,19 @@ def train(
             )
         model.train()
 
-        logger.info(
-            f"Epoch {current_epoch + 1}/{training_config.num_epochs} completed | "
-            f"Avg Train Loss: {average_epoch_loss:.4f} | "
-            f"Final Val Loss: {final_validation_loss:.4f} | "
-            f"Total Steps: {optimizer_update_step}"
-        )
+        # Update epoch progress bar with final epoch metrics
+        epoch_pbar.set_postfix({
+            'avg_train_loss': f"{average_epoch_loss:.4f}",
+            'final_val_loss': f"{final_validation_loss:.4f}",
+            'total_steps': optimizer_update_step
+        })
+        
+        # Close batch progress bar for this epoch
+        batch_pbar.close()
 
+    # Close epoch progress bar
+    epoch_pbar.close()
+    
     logger.info("Training completed!")
     return (
         optimizer_update_step,

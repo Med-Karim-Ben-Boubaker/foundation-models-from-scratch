@@ -23,14 +23,19 @@ def main():
 
     device = torch.device(tcfg.device if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
-    
+
     # Check if data exists before downloading
     if not os.path.exists("data/training_data_with_special_tokens.txt"):
         logger.info("Downloading data...")
         drive = DriveManager(headless=True)
-        drive.download_file("training/babylm/train_10M/data/training_data_with_special_tokens.txt", "data/training_data_with_special_tokens.txt")
-    
-    with open("data/training_data_with_special_tokens.txt", "r", encoding="utf-8") as fh:
+        drive.download_file(
+            "training/babylm/train_10M/data/training_data_with_special_tokens.txt",
+            "data/training_data_with_special_tokens.txt",
+        )
+
+    with open(
+        "data/training_data_with_special_tokens.txt", "r", encoding="utf-8"
+    ) as fh:
         text = fh.read()
 
     train_loader = create_dataloader_v1(
@@ -62,21 +67,21 @@ def main():
     _, _, train_loss, val_loss, step_numbers = train(
         model, train_loader, val_loader, opt, device, tcfg
     )
-    
-    logger.debug(f"Train loss: {train_loss}")
-    logger.debug(f"Val loss: {val_loss}")
-    logger.debug(f"Step numbers: {step_numbers}")
 
     # plot_training_history(train_loss, val_loss, step_numbers)
-    
+
     os.makedirs("artifacts", exist_ok=True)
     model_path = os.path.join("artifacts", "model_and_optimizer.pth")
     logger.info(f"Saving model to {model_path}")
-    torch.save({
-        "model": model.state_dict(),
-        "optimizer": opt.state_dict(),
-    }, model_path)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": opt.state_dict(),
+        },
+        model_path,
+    )
     logger.info(f"Model saved to {model_path}")
+
 
 if __name__ == "__main__":
     main()

@@ -8,6 +8,8 @@ from torch.optim import Optimizer
 from tqdm import tqdm
 from src.config import TrainConfig
 from src.training.evaluate import calc_loss_batch, calc_loss_loader
+from src.training.generate import generate
+from src.data.tokenizer import text_to_token_ids, get_tokenizer, token_ids_to_text
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -49,6 +51,14 @@ def train(
 
     model.to(device).train()
 
+    # Initialize tokenizer for inference during validation
+    tokenizer = get_tokenizer()
+    inference_prompt = "A cat is sleeping on the sofa, the dog"
+    context_length = getattr(model, 'pos_emb', None)
+    if context_length is not None:
+        context_length = context_length.weight.shape[0]
+    else:
+        context_length = 1024  # Default fallback
 
     logger.info(f"Starting training for {training_config.num_epochs} epochs...")
     logger.info(f"Gradient accumulation steps: {training_config.grad_accum_steps}")
@@ -149,6 +159,26 @@ def train(
                         device,
                         num_batches=training_config.eval_iter,
                     )
+                    
+                    # Generate sample text to monitor training progress
+                    try:
+                        input_token_ids = text_to_token_ids(inference_prompt, tokenizer).to(device)
+                        eos_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
+                        generated_token_ids = generate(
+                            model, 
+                            input_token_ids, 
+                            max_new_tokens=25, 
+                            context_size=context_length,
+                            temperature=0.8,
+                            top_p=0.95,
+                            repetition_penalty=1.1,
+                            eos_token_id=eos_token_id,
+                            min_new_tokens=5,
+                        )
+                        generated_text = token_ids_to_text(generated_token_ids, tokenizer)
+                        logger.info(f"Step {optimizer_update_step} | Generated: {generated_text}")
+                    except Exception as e:
+                        logger.warning(f"Text generation failed at step {optimizer_update_step}: {e}")
 
                 model.train()
 
@@ -207,6 +237,27 @@ def train(
                         device,
                         num_batches=training_config.eval_iter,
                     )
+                    
+                    # Generate sample text to monitor training progress
+                    try:
+                        input_token_ids = text_to_token_ids(inference_prompt, tokenizer).to(device)
+                        eos_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
+                        generated_token_ids = generate(
+                            model, 
+                            input_token_ids, 
+                            max_new_tokens=25, 
+                            context_size=context_length,
+                            temperature=0.8,
+                            top_p=0.95,
+                            repetition_penalty=1.1,
+                            eos_token_id=eos_token_id,
+                            min_new_tokens=5,
+                        )
+                        generated_text = token_ids_to_text(generated_token_ids, tokenizer)
+                        logger.info(f"Step {optimizer_update_step} (end flush) | Generated: {generated_text}")
+                    except Exception as e:
+                        logger.warning(f"Text generation failed at step {optimizer_update_step}: {e}")
+                        
                 model.train()
                 validation_losses[-1] = current_validation_loss
 
@@ -217,6 +268,27 @@ def train(
             final_validation_loss = calc_loss_loader(
                 validation_loader, model, device, num_batches=training_config.eval_iter
             )
+            
+            # Generate sample text at end of epoch
+            try:
+                input_token_ids = text_to_token_ids(inference_prompt, tokenizer).to(device)
+                eos_token_id = tokenizer.encode("<|endoftext|>")[0]
+                generated_token_ids = generate(
+                    model, 
+                    input_token_ids, 
+                    max_new_tokens=25, 
+                    context_size=context_length,
+                    temperature=0.8,
+                    top_p=0.95,
+                    repetition_penalty=1.1,
+                    eos_token_id=eos_token_id,
+                    min_new_tokens=5,
+                )
+                generated_text = token_ids_to_text(generated_token_ids, tokenizer)
+                logger.info(f"End of Epoch {current_epoch + 1} | Generated: {generated_text}")
+            except Exception as e:
+                logger.warning(f"Text generation failed at end of epoch {current_epoch + 1}: {e}")
+                
         model.train()
 
         # Update epoch progress bar with final epoch metrics

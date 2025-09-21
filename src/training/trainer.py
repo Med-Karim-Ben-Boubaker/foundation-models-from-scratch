@@ -5,6 +5,7 @@ import torch
 from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from src.config import TrainConfig
 from src.training.evaluate import calc_loss_batch, calc_loss_loader
@@ -23,6 +24,7 @@ def train(
     device: torch.device,
     training_config: TrainConfig,
     on_step_callback: Optional[Callable[[int, float, int], None]] = None,
+    writer: Optional[SummaryWriter] = None,
 ) -> Tuple[int, int, List[float], List[float], List[int]]:
     """Train a model with gradient accumulation, AMP, eval, and optional scheduler.
 
@@ -128,6 +130,11 @@ def train(
                 avg_update_loss = window_loss_sum / max(1, window_micro_batches)
                 training_losses.append(avg_update_loss)
                 step_numbers.append(optimizer_update_step)
+                
+                # Log to TensorBoard
+                if writer is not None:
+                    writer.add_scalar("Loss/Train", avg_update_loss, optimizer_update_step)
+                
                 # Reset window stats
                 window_loss_sum = 0.0
                 window_micro_batches = 0
@@ -169,7 +176,7 @@ def train(
                         eos_token_id = tokenizer.encode(
                             "<|endoftext|>", allowed_special={"<|endoftext|>"}
                         )[0]
-                        generated_token_ids = generate(
+                        generated_token_ids, _ = generate(
                             model,
                             input_token_ids,
                             max_new_tokens=25,
@@ -194,6 +201,11 @@ def train(
                 model.train()
 
                 validation_losses.append(current_validation_loss)
+                
+                # Log validation loss to TensorBoard
+                if writer is not None:
+                    writer.add_scalar("Loss/Validation", current_validation_loss, optimizer_update_step)
+                    writer.add_text("Generated_Text", generated_text, optimizer_update_step)
 
                 # Update progress bars with evaluation results
                 batch_pbar.set_postfix(
@@ -265,7 +277,7 @@ def train(
                         eos_token_id = tokenizer.encode(
                             "<|endoftext|>", allowed_special={"<|endoftext|>"}
                         )[0]
-                        generated_token_ids = generate(
+                        generated_token_ids, _ = generate(
                             model,
                             input_token_ids,
                             max_new_tokens=25,
@@ -304,7 +316,7 @@ def train(
                     device
                 )
                 eos_token_id = tokenizer.encode("<|endoftext|>")[0]
-                generated_token_ids = generate(
+                generated_token_ids, _ = generate(
                     model,
                     input_token_ids,
                     max_new_tokens=25,
@@ -325,6 +337,11 @@ def train(
                 )
 
         model.train()
+
+        # Log final epoch metrics to TensorBoard
+        if writer is not None:
+            writer.add_scalar("Loss/Train_Epoch", average_epoch_loss, current_epoch)
+            writer.add_scalar("Loss/Validation_Epoch", final_validation_loss, current_epoch)
 
         # Update epoch progress bar with final epoch metrics
         epoch_pbar.set_postfix(

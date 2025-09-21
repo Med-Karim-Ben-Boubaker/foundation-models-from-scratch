@@ -20,4 +20,5 @@ dependencies = [
     "types-requests>=2.32.4.20250913",
     "google-auth-stubs>=0.3.0",
     "tqdm>=4.67.1",
+    "tensorboard>=2.15.0",
 ]

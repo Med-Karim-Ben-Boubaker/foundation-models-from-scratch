@@ -8,7 +8,7 @@ model:
   qkv_bias: false
   
 train:
-  batch_size: 16
+  batch_size: 32
   lr: 0.002
   weight_decay: 0.01
   num_epochs: 1

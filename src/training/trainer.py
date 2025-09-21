@@ -54,7 +54,7 @@ def train(
     # Initialize tokenizer for inference during validation
     tokenizer = get_tokenizer()
     inference_prompt = "A cat is sleeping on the sofa, the dog"
-    context_length = getattr(model, 'pos_emb', None)
+    context_length = getattr(model, "pos_emb", None)
     if context_length is not None:
         context_length = context_length.weight.shape[0]
     else:
@@ -66,10 +66,7 @@ def train(
 
     # Create epoch progress bar
     epoch_pbar = tqdm(
-        range(training_config.num_epochs),
-        desc="Epochs",
-        position=0,
-        leave=True
+        range(training_config.num_epochs), desc="Epochs", position=0, leave=True
     )
 
     for current_epoch in epoch_pbar:
@@ -82,7 +79,7 @@ def train(
             desc=f"Epoch {current_epoch + 1}/{training_config.num_epochs}",
             position=1,
             leave=False,
-            total=len(train_loader)
+            total=len(train_loader),
         )
 
         # Accumulation window stats for logging per optimizer update
@@ -107,7 +104,9 @@ def train(
                 # Gradient clipping (after unscale when using AMP)
                 if clip_grad_norm > 0:
                     mixed_precision_scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), max_norm=clip_grad_norm
+                    )
 
                 mixed_precision_scaler.step(optimizer)
                 mixed_precision_scaler.update()
@@ -146,10 +145,12 @@ def train(
 
             if should_evaluate:
                 # Update batch progress bar to show evaluation
-                batch_pbar.set_postfix({
-                    'train_loss': f"{scaled_loss.item():.4f}",
-                    'status': 'evaluating...'
-                })
+                batch_pbar.set_postfix(
+                    {
+                        "train_loss": f"{scaled_loss.item():.4f}",
+                        "status": "evaluating...",
+                    }
+                )
 
                 model.eval()
                 with torch.no_grad():
@@ -159,15 +160,19 @@ def train(
                         device,
                         num_batches=training_config.eval_iter,
                     )
-                    
+
                     # Generate sample text to monitor training progress
                     try:
-                        input_token_ids = text_to_token_ids(inference_prompt, tokenizer).to(device)
-                        eos_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
+                        input_token_ids = text_to_token_ids(
+                            inference_prompt, tokenizer
+                        ).to(device)
+                        eos_token_id = tokenizer.encode(
+                            "<|endoftext|>", allowed_special={"<|endoftext|>"}
+                        )[0]
                         generated_token_ids = generate(
-                            model, 
-                            input_token_ids, 
-                            max_new_tokens=25, 
+                            model,
+                            input_token_ids,
+                            max_new_tokens=25,
                             context_size=context_length,
                             temperature=0.8,
                             top_p=0.95,
@@ -175,46 +180,60 @@ def train(
                             eos_token_id=eos_token_id,
                             min_new_tokens=5,
                         )
-                        generated_text = token_ids_to_text(generated_token_ids, tokenizer)
-                        logger.info(f"Step {optimizer_update_step} | Generated: {generated_text}")
+                        generated_text = token_ids_to_text(
+                            generated_token_ids, tokenizer
+                        )
+                        logger.info(
+                            f"Step {optimizer_update_step} | Generated: {generated_text}"
+                        )
                     except Exception as e:
-                        logger.warning(f"Text generation failed at step {optimizer_update_step}: {e}")
+                        logger.warning(
+                            f"Text generation failed at step {optimizer_update_step}: {e}"
+                        )
 
                 model.train()
 
                 validation_losses.append(current_validation_loss)
 
                 # Update progress bars with evaluation results
-                batch_pbar.set_postfix({
-                    'train_loss': f"{scaled_loss.item():.4f}",
-                    'val_loss': f"{current_validation_loss:.4f}",
-                    'step': optimizer_update_step,
-                    'tokens': f"{total_tokens_processed:,}"
-                })
-                
+                batch_pbar.set_postfix(
+                    {
+                        "train_loss": f"{scaled_loss.item():.4f}",
+                        "val_loss": f"{current_validation_loss:.4f}",
+                        "step": optimizer_update_step,
+                        "tokens": f"{total_tokens_processed:,}",
+                    }
+                )
+
                 # Update epoch progress bar with latest metrics
-                epoch_pbar.set_postfix({
-                    'avg_train_loss': f"{epoch_training_loss / max(1, epoch_batches_processed):.4f}",
-                    'val_loss': f"{current_validation_loss:.4f}",
-                    'step': optimizer_update_step
-                })
+                epoch_pbar.set_postfix(
+                    {
+                        "avg_train_loss": f"{epoch_training_loss / max(1, epoch_batches_processed):.4f}",
+                        "val_loss": f"{current_validation_loss:.4f}",
+                        "step": optimizer_update_step,
+                    }
+                )
             elif is_accumulation_step_complete:
                 # Add NaN for validation loss when not evaluating but at gradient step
                 validation_losses.append(float("nan"))
 
                 # Throttled progress bar updates
                 if (optimizer_update_step % postfix_step_freq) == 0:
-                    batch_pbar.set_postfix({
-                        'train_loss': f"{(training_losses[-1] if training_losses else scaled_loss.item()):.4f}",
-                        'step': optimizer_update_step,
-                        'tokens': f"{total_tokens_processed:,}"
-                    })
+                    batch_pbar.set_postfix(
+                        {
+                            "train_loss": f"{(training_losses[-1] if training_losses else scaled_loss.item()):.4f}",
+                            "step": optimizer_update_step,
+                            "tokens": f"{total_tokens_processed:,}",
+                        }
+                    )
 
         # Flush leftover gradients if the last accumulation window is incomplete
         if window_micro_batches > 0:
             if clip_grad_norm > 0:
                 mixed_precision_scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=clip_grad_norm
+                )
             mixed_precision_scaler.step(optimizer)
             mixed_precision_scaler.update()
             optimizer.zero_grad(set_to_none=True)
@@ -237,15 +256,19 @@ def train(
                         device,
                         num_batches=training_config.eval_iter,
                     )
-                    
+
                     # Generate sample text to monitor training progress
                     try:
-                        input_token_ids = text_to_token_ids(inference_prompt, tokenizer).to(device)
-                        eos_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
+                        input_token_ids = text_to_token_ids(
+                            inference_prompt, tokenizer
+                        ).to(device)
+                        eos_token_id = tokenizer.encode(
+                            "<|endoftext|>", allowed_special={"<|endoftext|>"}
+                        )[0]
                         generated_token_ids = generate(
-                            model, 
-                            input_token_ids, 
-                            max_new_tokens=25, 
+                            model,
+                            input_token_ids,
+                            max_new_tokens=25,
                             context_size=context_length,
                             temperature=0.8,
                             top_p=0.95,
@@ -253,11 +276,17 @@ def train(
                             eos_token_id=eos_token_id,
                             min_new_tokens=5,
                         )
-                        generated_text = token_ids_to_text(generated_token_ids, tokenizer)
-                        logger.info(f"Step {optimizer_update_step} (end flush) | Generated: {generated_text}")
+                        generated_text = token_ids_to_text(
+                            generated_token_ids, tokenizer
+                        )
+                        logger.info(
+                            f"Step {optimizer_update_step} (end flush) | Generated: {generated_text}"
+                        )
                     except Exception as e:
-                        logger.warning(f"Text generation failed at step {optimizer_update_step}: {e}")
-                        
+                        logger.warning(
+                            f"Text generation failed at step {optimizer_update_step}: {e}"
+                        )
+
                 model.train()
                 validation_losses[-1] = current_validation_loss
 
@@ -268,15 +297,17 @@ def train(
             final_validation_loss = calc_loss_loader(
                 validation_loader, model, device, num_batches=training_config.eval_iter
             )
-            
+
             # Generate sample text at end of epoch
             try:
-                input_token_ids = text_to_token_ids(inference_prompt, tokenizer).to(device)
+                input_token_ids = text_to_token_ids(inference_prompt, tokenizer).to(
+                    device
+                )
                 eos_token_id = tokenizer.encode("<|endoftext|>")[0]
                 generated_token_ids = generate(
-                    model, 
-                    input_token_ids, 
-                    max_new_tokens=25, 
+                    model,
+                    input_token_ids,
+                    max_new_tokens=25,
                     context_size=context_length,
                     temperature=0.8,
                     top_p=0.95,
@@ -285,25 +316,31 @@ def train(
                     min_new_tokens=5,
                 )
                 generated_text = token_ids_to_text(generated_token_ids, tokenizer)
-                logger.info(f"End of Epoch {current_epoch + 1} | Generated: {generated_text}")
+                logger.info(
+                    f"End of Epoch {current_epoch + 1} | Generated: {generated_text}"
+                )
             except Exception as e:
-                logger.warning(f"Text generation failed at end of epoch {current_epoch + 1}: {e}")
-                
+                logger.warning(
+                    f"Text generation failed at end of epoch {current_epoch + 1}: {e}"
+                )
+
         model.train()
 
         # Update epoch progress bar with final epoch metrics
-        epoch_pbar.set_postfix({
-            'avg_train_loss': f"{average_epoch_loss:.4f}",
-            'final_val_loss': f"{final_validation_loss:.4f}",
-            'total_steps': optimizer_update_step
-        })
-        
+        epoch_pbar.set_postfix(
+            {
+                "avg_train_loss": f"{average_epoch_loss:.4f}",
+                "final_val_loss": f"{final_validation_loss:.4f}",
+                "total_steps": optimizer_update_step,
+            }
+        )
+
         # Close batch progress bar for this epoch
         batch_pbar.close()
 
     # Close epoch progress bar
     epoch_pbar.close()
-    
+
     logger.info("Training completed!")
     return (
         optimizer_update_step,

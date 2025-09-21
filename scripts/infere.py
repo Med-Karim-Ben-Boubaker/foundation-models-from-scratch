@@ -1,3 +1,4 @@
+import json
 import torch
 import yaml
 from src.config import GPTConfig
@@ -5,7 +6,6 @@ from src.data.tokenizer import text_to_token_ids, get_tokenizer, token_ids_to_te
 from src.models.gpt import GPTModel
 from src.utils.logging import get_logger
 from src.training.generate import generate
-from src.visualization.collector import GenerationTrace
 
 logger = get_logger(__name__)
 
@@ -39,11 +39,9 @@ def main():
 
     eos_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
 
-    trace = GenerationTrace()
-
     max_new_tokens = 100
     logger.info("Starting generation...")
-    output_token_ids = generate(
+    output_token_ids, trace_data = generate(
         model, 
         input_token_ids, 
         max_new_tokens, 
@@ -55,7 +53,7 @@ def main():
         no_repeat_ngram_size=3,
         eos_token_id=eos_token_id,
         min_new_tokens=1,
-        collector=trace,
+        trace=True,
         topk_log=10,
         verbose=True,
     )
@@ -63,8 +61,11 @@ def main():
     generated_text = token_ids_to_text(output_token_ids, tokenizer)
     logger.info(f"Generated text: {generated_text}")
     
-    from src.visualization.printer import print_generation_summary
-    print_generation_summary(trace, tokenizer)
+    # Save trace data if available
+    if trace_data:
+        with open("artifacts/trace.json", "w") as f:
+            json.dump(trace_data, f, indent=2)
+        logger.info("Trace data saved to artifacts/trace.json")
 
 if __name__ == "__main__":
     main()

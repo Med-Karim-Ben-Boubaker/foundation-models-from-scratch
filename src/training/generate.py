@@ -1,8 +1,11 @@
 from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
+from src.utils.logging import get_logger
 
 from src.visualization.collector import GenerationTrace, GenerationStep
+
+logger = get_logger(__name__)
 
 
 def _apply_repetition_penalty(
@@ -31,6 +34,12 @@ def _apply_repetition_penalty(
 def _enforce_no_repeat_ngram(
     logits: torch.Tensor, generated: torch.Tensor, no_repeat_ngram_size: int
 ) -> torch.Tensor:
+    """
+    Prevent repetition of n-grams by banning tokens that would complete repeated sequences.
+
+    Algorithm: Build a map of (n-1)-gram prefixes to their possible next tokens,
+    then ban tokens that would complete any previously seen n-gram.
+    """
     if no_repeat_ngram_size <= 0:
         return logits
 
@@ -40,11 +49,14 @@ def _enforce_no_repeat_ngram(
 
     prefix_len = no_repeat_ngram_size - 1
     next_for_prefix: Dict[Tuple[int, ...], List[int]] = {}
+
+    # Build map of (n-1)-gram prefixes to their possible next tokens
     for i in range(len(seq) - no_repeat_ngram_size + 1):
         prefix = tuple(seq[i : i + prefix_len])
         nxt = seq[i + prefix_len]
         next_for_prefix.setdefault(prefix, []).append(nxt)
 
+    # Get current (n-1)-gram prefix and ban its possible next tokens
     cur_prefix = tuple(seq[-prefix_len:])
     banned = next_for_prefix.get(cur_prefix, [])
     if banned:
@@ -58,7 +70,14 @@ def _enforce_no_repeat_ngram(
 def _top_k_top_p_filtering(
     logits: torch.Tensor, top_k: int = 0, top_p: float = 1.0
 ) -> torch.Tensor:
+    """
+    Apply nucleus (top-p) and top-k filtering to logits.
+
+    Top-k: Keep only the k highest probability tokens.
+    Top-p: Keep tokens whose cumulative probability mass is <= p.
+    """
     if top_k > 0:
+        # Find the k-th largest value to use as threshold
         kth_vals = torch.topk(logits, k=min(top_k, logits.size(-1)))[0][..., -1, None]
         logits = torch.where(
             logits < kth_vals, torch.full_like(logits, float("-inf")), logits
@@ -69,9 +88,10 @@ def _top_k_top_p_filtering(
         sorted_probs = F.softmax(sorted_logits, dim=-1)
         cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
         sorted_mask = cumulative_probs > top_p
-        # Shift mask right to keep first token above threshold
+        # Shift mask right to keep first token above threshold (nucleus sampling)
         sorted_mask[..., 1:] = sorted_mask[..., :-1].clone()
         sorted_mask[..., 0] = False
+        # Convert sorted mask back to original logits order
         mask = torch.zeros_like(logits, dtype=torch.bool)
         mask.scatter_(dim=-1, index=sorted_indices, src=sorted_mask)
         logits = logits.masked_fill(mask, float("-inf"))
@@ -93,10 +113,10 @@ def generate(
     no_repeat_ngram_size: int = 3,
     eos_token_id: Optional[int] = None,
     min_new_tokens: int = 8,
-    collector: Optional["GenerationTrace"] = None,
-    topk_log: int = 10,
+    trace: bool = False,
     verbose: bool = False,
-) -> torch.Tensor:
+    topk_log: int = 10,
+) -> Tuple[torch.Tensor, dict]:
     from src.visualization.printer import print_generation_step
     from src.data.tokenizer import get_tokenizer
 
@@ -104,8 +124,8 @@ def generate(
     out = input_ids
     new_count = 0
 
-    # Initialize collector if provided
-    if collector is not None and collector.prompt_ids is None:
+    if trace:
+        collector = GenerationTrace()
         collector.set_prompt(out)
         collector.set_metadata(
             {
@@ -118,38 +138,53 @@ def generate(
         )
 
     if verbose:
-        print("=== Starting Generation ===")
+        logger.info("=== Starting Generation ===")
         prompt_text = tokenizer.decode(input_ids[0].tolist())
-        print(f"Prompt: '{prompt_text}'")
+        logger.info(f"Prompt: '{prompt_text}'")
 
     for step in range(max_new_tokens):
+        # Sliding window: only use last context_size tokens to avoid memory issues
         context_tokens = out[:, -context_size:]
 
+        # Get model predictions for next token
         logits = model(context_tokens)[:, -1, :]
 
+        # Apply temperature scaling (higher temp = more randomness)
         if temperature > 0:
             logits = logits / temperature
 
+        # Apply generation constraints in sequence
         logits = _apply_repetition_penalty(logits, out, repetition_penalty)
-
         logits = _enforce_no_repeat_ngram(logits, out, no_repeat_ngram_size)
-
         logits = _top_k_top_p_filtering(logits, top_k=top_k, top_p=top_p)
 
+        # Convert to probabilities and sample next token
         probs = F.softmax(logits, dim=-1)
         if temperature > 0:
             next_id = torch.multinomial(probs, num_samples=1)
         else:
+            # Greedy decoding when temperature = 0
             next_id = torch.argmax(probs, dim=-1, keepdim=True)
 
-        # Collect visualization data if collector is provided
-        if collector is not None:
-            k = min(topk_log, probs.shape[-1])
-            topv, topi = torch.topk(probs, k=k, dim=-1)
+        # Calculate top-k values once for both tracing and verbose printing
+        k = min(topk_log, probs.shape[-1])
+        topv, topi = torch.topk(probs, k=k, dim=-1)
+        # Extract corresponding logits and probs for top-k tokens only
+        topk_logits = logits.gather(dim=-1, index=topi)
+        topk_probs = probs.gather(dim=-1, index=topi)
+
+        # Calculate generation metrics from full distribution
+        probs_1d = probs.squeeze(0) if probs.dim() > 1 else probs
+        logits_1d = logits.squeeze(0) if logits.dim() > 1 else logits
+        entropy = -(probs_1d * torch.log(probs_1d + 1e-8)).sum().item()
+        max_logit = logits_1d.max().item()
+        min_logit = logits_1d.min().item()
+
+        if trace:
             collector.add_step(
                 step + 1,
-                logits,
-                probs,
+                topk_logits,
+                topk_probs,
                 next_id,
                 topi,
                 topv,
@@ -157,48 +192,40 @@ def generate(
 
         # Print step information if verbose
         if verbose:
-            # Get top-k for printing if not already available
-            if collector is not None:
-                topk_vals, topk_idx = topv, topi
-            else:
-                topk_vals, topk_idx = torch.topk(probs, k=5, dim=-1)
-
-            # Calculate metrics
-            probs_1d = probs.squeeze(0) if probs.dim() > 1 else probs
-            logits_1d = logits.squeeze(0) if logits.dim() > 1 else logits
-            entropy = -(probs_1d * torch.log(probs_1d + 1e-8)).sum().item()
-            max_logit = logits_1d.max().item()
-            min_logit = logits_1d.min().item()
-
-            # Create a temporary step object for printing
+            # Create a temporary step object for printing using already calculated values
             temp_step = GenerationStep(
                 step=step + 1,
-                logits=logits,
-                probs=probs,
+                topk_logits=topk_logits,
+                topk_probs=topk_probs,
                 next_token_id=int(next_id.item()),
-                topk_idx=topk_idx,
-                topk_vals=topk_vals,
+                topk_idx=topi,
+                topk_vals=topv,
                 entropy=entropy,
                 max_logit=max_logit,
                 min_logit=min_logit,
             )
-            print_generation_step(temp_step, tokenizer, top_k=5)
+            print_generation_step(temp_step, tokenizer, top_k=min(5, k))
 
+        # Append new token to sequence
         out = torch.cat([out, next_id], dim=1)
         new_count += 1
 
+        # Early stopping on EOS token (but respect minimum length)
         if eos_token_id is not None and int(next_id.item()) == int(eos_token_id):
             if new_count >= min_new_tokens:
                 if verbose:
-                    print(f"\nStopping early at step {step + 1} (EOS token)")
+                    logger.info(f"\nStopping early at step {step + 1} (EOS token)")
                 break
 
     if verbose:
         final_text = tokenizer.decode(out[0].tolist())
-        print("\n=== Final Generated Text ===")
-        print(f"'{final_text}'")
+        logger.info("\n=== Final Generated Text ===")
+        logger.info(f"'{final_text}'")
 
-    return out
+    if trace:
+        return out, collector.to_dict()
+    else:
+        return out, {}
 
 
 def generate_text_simple(model, input_token_ids, max_new_tokens, context_size):

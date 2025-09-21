@@ -5,6 +5,7 @@ from src.data.tokenizer import text_to_token_ids, get_tokenizer, token_ids_to_te
 from src.models.gpt import GPTModel
 from src.utils.logging import get_logger
 from src.training.generate import generate
+from src.visualization.collector import GenerationTrace
 
 logger = get_logger(__name__)
 
@@ -30,16 +31,18 @@ def main():
 
     logger.info("Model loaded successfully")
 
-    prompt = "USA is a"
+    prompt = "2+2 is ?"
 
     tokenizer = get_tokenizer()
     input_token_ids = text_to_token_ids(prompt, tokenizer)
     input_token_ids = input_token_ids.to(device)
 
-    # Get EOS token ID for early stopping
     eos_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
 
+    trace = GenerationTrace()
+
     max_new_tokens = 100
+    logger.info("Starting generation...")
     output_token_ids = generate(
         model, 
         input_token_ids, 
@@ -51,10 +54,17 @@ def main():
         repetition_penalty=1.2,
         no_repeat_ngram_size=3,
         eos_token_id=eos_token_id,
-        min_new_tokens=3,
+        min_new_tokens=1,
+        collector=trace,
+        topk_log=10,
+        verbose=True,
     )
     
-    logger.info(f"Generated text: {token_ids_to_text(output_token_ids, tokenizer)}")
+    generated_text = token_ids_to_text(output_token_ids, tokenizer)
+    logger.info(f"Generated text: {generated_text}")
+    
+    from src.visualization.printer import print_generation_summary
+    print_generation_summary(trace, tokenizer)
 
 if __name__ == "__main__":
     main()

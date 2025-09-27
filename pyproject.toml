@@ -21,4 +21,5 @@ dependencies = [
     "google-auth-stubs>=0.3.0",
     "tqdm>=4.67.1",
     "tensorboard>=2.15.0",
+    "datasets"
 ]

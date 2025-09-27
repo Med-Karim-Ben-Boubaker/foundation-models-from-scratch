@@ -15,7 +15,7 @@ def main():
     logger.info(f"Using device: {device}")
 
     config_path = "configs/gpt_124m.yaml"
-    model_checkpoint_path = "artifacts/model_and_optimizer.pth"
+    model_checkpoint_path = "artifacts/model_and_optimizer_fineweb.pth"
 
     with open(config_path) as f:
         raw = yaml.safe_load(f)
@@ -31,7 +31,7 @@ def main():
 
     logger.info("Model loaded successfully")
 
-    prompt = "2+2 is ?"
+    prompt = "generate a story about a cat"
 
     tokenizer = get_tokenizer()
     input_token_ids = text_to_token_ids(prompt, tokenizer)

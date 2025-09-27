@@ -42,3 +42,4 @@ class GPTDatasetV1(Dataset):
         return self.input_sequences[sequence_index], self.target_sequences[
             sequence_index
         ]
+        

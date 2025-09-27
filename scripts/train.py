@@ -51,17 +51,17 @@ def main():
         {}
     )
 
-    # Check if data exists before downloading
-    if not os.path.exists("data/training_data_with_special_tokens.txt"):
-        logger.info("Downloading data...")
-        drive = DriveManager(headless=True)
-        drive.download_file(
-            "training/babylm/train_10M/data/training_data_with_special_tokens.txt",
-            "data/training_data_with_special_tokens.txt",
-        )
+    # # Check if data exists before downloading
+    # if not os.path.exists("data/training_data_with_special_tokens.txt"):
+    #     logger.info("Downloading data...")
+    #     drive = DriveManager(headless=True)
+    #     drive.download_file(
+    #         "training/babylm/train_10M/data/training_data_with_special_tokens.txt",
+    #         "data/training_data_with_special_tokens.txt",
+    #     )
 
     with open(
-        "data/training_data_with_special_tokens.txt", "r", encoding="utf-8"
+        "data/fineweb_samples.txt", "r", encoding="utf-8"
     ) as fh:
         text = fh.read()
 
@@ -98,7 +98,7 @@ def main():
     # plot_training_history(train_loss, val_loss, step_numbers)
 
     os.makedirs("artifacts", exist_ok=True)
-    model_path = os.path.join("artifacts", "model_and_optimizer_2.pth")
+    model_path = os.path.join("artifacts", "model_and_optimizer_fineweb.pth")
     logger.info(f"Saving model to {model_path}")
     torch.save(
         {

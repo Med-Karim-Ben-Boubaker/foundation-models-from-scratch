@@ -1,6 +1,6 @@
 model:
   vocab_size: 50257
-  context_length: 128
+  context_length: 256
   emb_dim: 256
   n_heads: 8
   n_layers: 6
@@ -8,7 +8,7 @@ model:
   qkv_bias: false
   
 train:
-  batch_size: 32
+  batch_size: 16
   lr: 0.002
   weight_decay: 0.01
   num_epochs: 1
@@ -19,3 +19,9 @@ train:
   device: cuda
   seed: 123
   num_workers: 2
+  warmup_steps: 1000
+  min_lr: 1.0e-5
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  fused: true
+  grad_clip_norm: 1.0

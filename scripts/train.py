@@ -40,7 +40,6 @@ def main():
             "learning_rate": tcfg.lr,
             "batch_size": tcfg.batch_size,
             "num_epochs": tcfg.num_epochs,
-            "weight_decay": tcfg.weight_decay,
             "grad_accum_steps": tcfg.grad_accum_steps,
             "eval_freq": tcfg.eval_freq,
             "context_length": gcfg.context_length,
@@ -86,24 +85,21 @@ def main():
 
     model = GPTModel(gcfg)
     model = model.to(device)
-    opt = torch.optim.AdamW(
-        model.parameters(), lr=tcfg.lr, weight_decay=tcfg.weight_decay
-    )
 
     logger.info("Starting training...")
-    _, _, train_loss, val_loss, step_numbers = train(
-        model, train_loader, val_loader, opt, device, tcfg, writer=writer
+    _, _, train_loss, val_loss, step_numbers, optimizer = train(
+        model, train_loader, val_loader, device, tcfg, writer=writer
     )
 
     # plot_training_history(train_loss, val_loss, step_numbers)
 
     os.makedirs("artifacts", exist_ok=True)
-    model_path = os.path.join("artifacts", "model_and_optimizer_fineweb.pth")
+    model_path = os.path.join("artifacts", "model_and_optimizer_fineweb_2.pth")
     logger.info(f"Saving model to {model_path}")
     torch.save(
         {
             "model": model.state_dict(),
-            "optimizer": opt.state_dict(),
+            "optimizer": optimizer.state_dict(),
         },
         model_path,
     )

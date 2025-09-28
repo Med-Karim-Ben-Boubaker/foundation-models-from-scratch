@@ -15,32 +15,15 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-
 def train(
     model: torch.nn.Module,
     train_loader: DataLoader,
     validation_loader: DataLoader,
-    optimizer: Optimizer,
     device: torch.device,
     training_config: TrainConfig,
     on_step_callback: Optional[Callable[[int, float, int], None]] = None,
     writer: Optional[SummaryWriter] = None,
-) -> Tuple[int, int, List[float], List[float], List[int]]:
-    """Train a model with gradient accumulation, AMP, eval, and optional scheduler.
-
-    Args:
-        model: The PyTorch model to train.
-        train_loader: DataLoader that yields tuples of (input_tokens, target_tokens).
-        validation_loader: DataLoader used for periodic evaluation.
-        optimizer: Optimizer for updating model parameters.
-        device: Device to run training on.
-        training_config: Training hyperparameters and runtime config.
-        on_step_callback: Optional callback taking (step, loss, total_tokens) called each micro-batch.
-
-    Returns:
-        A tuple of (optimizer_update_step, total_tokens_processed, training_losses,
-        validation_losses, step_numbers).
-    """
+) -> Tuple[int, int, List[float], List[float], List[int], Optimizer]:
     is_cuda = device.type == "cuda"
     mixed_precision_scaler = GradScaler("cuda", enabled=training_config.amp and is_cuda)
 
@@ -52,6 +35,61 @@ def train(
     step_numbers = []
 
     model.to(device).train()
+
+    # Create optimizer and scheduler inline
+    params = [param for param in model.parameters() if param.requires_grad]
+    
+    # Check if fused AdamW is available (requires CUDA and modern GPU)
+    use_fused = (
+        training_config.fused
+        and torch.cuda.is_available()
+        and hasattr(torch.optim.AdamW, "fused")
+    )
+    
+    optimizer = torch.optim.AdamW(
+        params,
+        lr=training_config.lr,
+        betas=training_config.betas,
+        eps=training_config.eps,
+        fused=use_fused,
+    )
+
+    # Estimate total steps for scheduler
+    total_steps = len(train_loader) // training_config.grad_accum_steps * training_config.num_epochs
+    
+    # Create scheduler inline
+    scheduler = None
+    if training_config.warmup_steps > 0:
+        from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+
+        # Linear warmup scheduler
+        warmup_scheduler = LinearLR(
+            optimizer,
+            start_factor=1e-8,
+            end_factor=1.0,
+            total_iters=training_config.warmup_steps,
+        )
+
+        # If min_lr is set, add cosine decay after warmup
+        if training_config.min_lr > 0:
+            cosine_scheduler = CosineAnnealingLR(
+                optimizer,
+                T_max=total_steps - training_config.warmup_steps,
+                eta_min=training_config.min_lr,
+            )
+            scheduler = SequentialLR(
+                optimizer,
+                [warmup_scheduler, cosine_scheduler],
+                milestones=[training_config.warmup_steps],
+            )
+        else:
+            scheduler = warmup_scheduler
+
+    logger.info("Created optimizer: AdamW")
+    if scheduler:
+        logger.info(
+            f"Created scheduler: warmup_steps={training_config.warmup_steps}, total_steps={total_steps}"
+        )
 
     # Initialize tokenizer for inference during validation
     tokenizer = get_tokenizer()
@@ -89,7 +127,7 @@ def train(
         window_micro_batches = 0
         # Throttle progress bar updates to reduce overhead
         postfix_step_freq = max(1, int(os.environ.get("POSTFIX_STEP_FREQ", "10")))
-        clip_grad_norm = float(os.environ.get("CLIP_NORM", "1.0"))
+        clip_grad_norm = training_config.grad_clip_norm
 
         for batch_index, (input_tokens, target_tokens) in enumerate(batch_pbar):
             with autocast("cuda", enabled=training_config.amp and is_cuda):
@@ -109,12 +147,15 @@ def train(
                     torch.nn.utils.clip_grad_norm_(
                         model.parameters(), max_norm=clip_grad_norm
                     )
-
                 mixed_precision_scaler.step(optimizer)
                 mixed_precision_scaler.update()
                 optimizer.zero_grad(set_to_none=True)
 
                 optimizer_update_step += 1
+
+                # PyTorch scheduler step (much more efficient!)
+                if scheduler is not None:
+                    scheduler.step()
 
             batch_tokens = input_tokens.numel()
             total_tokens_processed += batch_tokens
@@ -130,11 +171,22 @@ def train(
                 avg_update_loss = window_loss_sum / max(1, window_micro_batches)
                 training_losses.append(avg_update_loss)
                 step_numbers.append(optimizer_update_step)
-                
+
                 # Log to TensorBoard
                 if writer is not None:
-                    writer.add_scalar("Loss/Train", avg_update_loss, optimizer_update_step)
-                
+                    writer.add_scalar(
+                        "Loss/Train", avg_update_loss, optimizer_update_step
+                    )
+                    # Log current learning rate
+                    current_lr = (
+                        scheduler.get_last_lr()[0]
+                        if scheduler
+                        else optimizer.param_groups[0]["lr"]
+                    )
+                    writer.add_scalar(
+                        "Learning_Rate", current_lr, optimizer_update_step
+                    )
+
                 # Reset window stats
                 window_loss_sum = 0.0
                 window_micro_batches = 0
@@ -201,11 +253,17 @@ def train(
                 model.train()
 
                 validation_losses.append(current_validation_loss)
-                
+
                 # Log validation loss to TensorBoard
                 if writer is not None:
-                    writer.add_scalar("Loss/Validation", current_validation_loss, optimizer_update_step)
-                    writer.add_text("Generated_Text", generated_text, optimizer_update_step)
+                    writer.add_scalar(
+                        "Loss/Validation",
+                        current_validation_loss,
+                        optimizer_update_step,
+                    )
+                    writer.add_text(
+                        "Generated_Text", generated_text, optimizer_update_step
+                    )
 
                 # Update progress bars with evaluation results
                 batch_pbar.set_postfix(
@@ -251,6 +309,10 @@ def train(
             optimizer.zero_grad(set_to_none=True)
 
             optimizer_update_step += 1
+
+            # PyTorch scheduler step when flushing at epoch end
+            if scheduler is not None:
+                scheduler.step()
 
             avg_update_loss = window_loss_sum / max(1, window_micro_batches)
             training_losses.append(avg_update_loss)
@@ -341,7 +403,9 @@ def train(
         # Log final epoch metrics to TensorBoard
         if writer is not None:
             writer.add_scalar("Loss/Train_Epoch", average_epoch_loss, current_epoch)
-            writer.add_scalar("Loss/Validation_Epoch", final_validation_loss, current_epoch)
+            writer.add_scalar(
+                "Loss/Validation_Epoch", final_validation_loss, current_epoch
+            )
 
         # Update epoch progress bar with final epoch metrics
         epoch_pbar.set_postfix(
@@ -365,4 +429,5 @@ def train(
         training_losses,
         validation_losses,
         step_numbers,
+        optimizer,
     )

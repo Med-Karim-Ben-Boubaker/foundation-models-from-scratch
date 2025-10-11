@@ -94,7 +94,7 @@ def main():
     # plot_training_history(train_loss, val_loss, step_numbers)
 
     os.makedirs("artifacts", exist_ok=True)
-    model_path = os.path.join("artifacts", "model_and_optimizer_fineweb_2.pth")
+    model_path = os.path.join("artifacts", "gpt2_35m_4heads_12layers.pth")
     logger.info(f"Saving model to {model_path}")
     torch.save(
         {

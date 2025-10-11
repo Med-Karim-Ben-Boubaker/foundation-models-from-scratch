@@ -11,3 +11,4 @@ token_*.pickle
 .mypy_cache
 changes.md
 runs/
+chats/

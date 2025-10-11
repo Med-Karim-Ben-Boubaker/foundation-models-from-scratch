@@ -15,7 +15,7 @@ def main():
     logger.info(f"Using device: {device}")
 
     config_path = "configs/gpt_124m.yaml"
-    model_checkpoint_path = "artifacts/model_and_optimizer_fineweb.pth"
+    model_checkpoint_path = "artifacts/model_and_optimizer_fineweb_2.pth"
 
     with open(config_path) as f:
         raw = yaml.safe_load(f)
@@ -31,7 +31,11 @@ def main():
 
     logger.info("Model loaded successfully")
 
-    prompt = "generate a story about a cat"
+    prompt = """
+    Title: How to learn Python faster
+
+    Article:
+  """
 
     tokenizer = get_tokenizer()
     input_token_ids = text_to_token_ids(prompt, tokenizer)
@@ -39,23 +43,23 @@ def main():
 
     eos_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
 
-    max_new_tokens = 100
+    max_new_tokens = 256
     logger.info("Starting generation...")
     output_token_ids, trace_data = generate(
         model, 
         input_token_ids, 
         max_new_tokens, 
         gpt_config.context_length,
-        temperature=0.8,
-        top_p=0.95,
-        top_k=50,
-        repetition_penalty=1.2,
+        temperature=0.7,
+        top_p=0.9,
+        top_k=40,
+        repetition_penalty=1.15,
         no_repeat_ngram_size=3,
         eos_token_id=eos_token_id,
         min_new_tokens=1,
         trace=True,
         topk_log=10,
-        verbose=True,
+        verbose=False,
     )
     
     generated_text = token_ids_to_text(output_token_ids, tokenizer)

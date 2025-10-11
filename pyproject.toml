@@ -11,15 +11,25 @@ dependencies = [
     "pyyaml",
     "structlog",
     "numpy",
-    "torch>=2.8.0",
+    "torch",
     "matplotlib",
     "google-api-python-client",
     "google-auth-httplib2",
     "google-auth-oauthlib",
-    "types-google-cloud-ndb>=2.3.0.20250317",
-    "types-requests>=2.32.4.20250913",
-    "google-auth-stubs>=0.3.0",
-    "tqdm>=4.67.1",
-    "tensorboard>=2.15.0",
+    "types-google-cloud-ndb",
+    "types-requests",
+    "google-auth-stubs",
+    "tqdm",
+    "tensorboard",
     "datasets"
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu118" },
 ]

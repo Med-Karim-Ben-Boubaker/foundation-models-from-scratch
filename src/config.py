@@ -24,7 +24,7 @@ class GPTConfig:
 
 @dataclass
 class TrainConfig:
-  batch_size: int = 16
+  batch_size: int = 4
   lr: float = 4e-4
   weight_decay: float = 0.01
   num_epochs: int = 10

@@ -5,8 +5,8 @@ import os
 logger = get_logger(__name__)
 
 DATASET_NAME = "HuggingFaceFW/fineweb"
-NUM_SAMPLES = 100000
-OUTPUT_FILE = "data/fineweb_samples.txt"
+NUM_SAMPLES = 1000000
+OUTPUT_FILE = "data/fineweb.txt"
 
 logger.info(f"Loading {NUM_SAMPLES} samples from {DATASET_NAME}...")
 

@@ -14,7 +14,6 @@ class GPTModel(nn.Module):
     ])
     self.final_norm = LayerNorm(cfg.emb_dim)
     self.out_head = nn.Linear(cfg.emb_dim, cfg.vocab_size, bias=False)
-    self.out_head.weight = self.tok_emb.weight
 
   def forward(self, in_idx):
     b, t = in_idx.shape

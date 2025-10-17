@@ -15,7 +15,7 @@ def main():
     logger.info(f"Using device: {device}")
 
     config_path = "configs/gpt_124m.yaml"
-    model_checkpoint_path = "artifacts/gpt2_35m_4heads_12layers.pth"
+    model_checkpoint_path = "artifacts/gpt2_35m_4heads_12layers_finetuned.pth"
 
     with open(config_path) as f:
         raw = yaml.safe_load(f)
@@ -31,7 +31,7 @@ def main():
 
     logger.info("Model loaded successfully")
 
-    prompt = """The old man found a bottle on the beach. Inside was a message from his younger self, written decades ago and lost at sea."""
+    prompt = """### Instruction:\nGenerate a conversation between a customer and a tech support representative about resetting a password.\n\n### Input:Customer: I need to reset my password.\n\n### Response:\n"""
 
     tokenizer = get_tokenizer()
     input_token_ids = text_to_token_ids(prompt, tokenizer)
@@ -46,16 +46,16 @@ def main():
         input_token_ids, 
         max_new_tokens, 
         gpt_config.context_length,
-        temperature=0.1,
-        top_p=0.9,
-        top_k=40,
+        temperature=0.7,
+        top_p=0.95,
+        top_k=0,
         repetition_penalty=1.15,
         no_repeat_ngram_size=3,
         eos_token_id=eos_token_id,
         min_new_tokens=1,
         trace=True,
         topk_log=10,
-        verbose=False,
+        verbose=True,
     )
     
     generated_text = token_ids_to_text(output_token_ids, tokenizer)

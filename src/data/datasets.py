@@ -1,5 +1,6 @@
 from torch.utils.data import Dataset
 import torch
+from typing import List, Dict, Any
 
 from src.utils.logging import get_logger
 
@@ -42,4 +43,39 @@ class GPTDatasetV1(Dataset):
         return self.input_sequences[sequence_index], self.target_sequences[
             sequence_index
         ]
+        
+class InstructFineTuningDataset(Dataset):
+    def __init__(self, examples: List[Dict[str, Any]], tokenizer, max_length: int, stride: int = 0):
+        self.input_sequences: List[torch.Tensor] = []
+        self.target_sequences: List[torch.Tensor] = []
+        self.loss_masks: List[torch.Tensor] = []
+        
+        logger.info(f"Initializing InstructFineTuningDataset with {len(examples)} examples")
+        
+        for example in examples:
+            prompt = f"### Instruction:\n{example['instruction']}\n\n### Input:\n{example['input']}\n\n### Response:\n"
+            full_sequence = prompt + example["output"] + "<|endoftext|>"
+            prompt_tokens = tokenizer.encode(prompt, allowed_special={"<|endoftext|>"})
+            full_tokens = tokenizer.encode(full_sequence, allowed_special={"<|endoftext|>"})
+            
+            if len(full_tokens) > max_length:
+                continue
+            
+            loss_mask = [0] * len(prompt_tokens) + [1] * (len(full_tokens) - len(prompt_tokens))
+            
+            self.input_sequences.append(torch.tensor(prompt_tokens, dtype=torch.long))
+            self.target_sequences.append(torch.tensor(full_tokens, dtype=torch.long))
+            self.loss_masks.append(torch.tensor(loss_mask, dtype=torch.bool))
+        
+        logger.info(f"Created {len(self.input_sequences)} training examples")
+    
+    def __len__(self) -> int:
+        return len(self.input_sequences)
+    
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return (
+            self.input_sequences[idx],
+            self.target_sequences[idx], 
+            self.loss_masks[idx]
+        )
         

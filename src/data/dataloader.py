@@ -10,19 +10,9 @@ logger = get_logger(__name__)
 def instruction_collate_fn(batch):
     """
     Custom collate function for instruction fine-tuning dataset.
-    
-    This function handles variable sequence lengths by returning lists of tensors
-    instead of stacked tensors, similar to how the current implementation works.
-    
-    Args:
-        batch: List of (input_seq, target_seq, loss_mask) tuples
-        
-    Returns:
-        Tuple of (input_list, target_list, mask_list)
     """
     input_seqs, target_seqs, loss_masks = zip(*batch)
     
-    # Return as lists of tensors (no padding, no stacking)
     return list(input_seqs), list(target_seqs), list(loss_masks)
 
 def create_dataloader_v1(

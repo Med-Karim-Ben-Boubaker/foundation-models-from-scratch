@@ -444,11 +444,12 @@ def train_instruction_finetuning(
 ) -> Tuple[int, int, List[float], List[float], List[int], Optimizer]:
     """
     Train model for instruction fine-tuning with masked loss.
-    
-    This function is similar to the regular train function but uses masked loss
-    for instruction fine-tuning where only output tokens contribute to the loss.
     """
     is_cuda = device.type == "cuda"
+    if device.type == "cpu":
+        logger.warning("CUDA is not available. Training will be slow.")
+        raise RuntimeError("CUDA is not available. Please check your GPU configuration.")
+    
     mixed_precision_scaler = GradScaler("cuda", enabled=training_config.amp and is_cuda)
 
     total_tokens_processed = 0
@@ -522,7 +523,7 @@ def train_instruction_finetuning(
     if context_length is not None:
         context_length = context_length.weight.shape[0]
     else:
-        context_length = 1024  # Default fallback
+        context_length = 256  # Default fallback
 
     logger.info(f"Starting instruction fine-tuning for {training_config.num_epochs} epochs...")
     logger.info(f"Gradient accumulation steps: {training_config.grad_accum_steps}")

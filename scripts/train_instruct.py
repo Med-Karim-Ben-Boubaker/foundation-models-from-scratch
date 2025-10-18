@@ -2,8 +2,7 @@
 """
 Training script for instruction fine-tuning.
 
-This script loads a pre-trained model and fine-tunes it on instruction-following data
-using masked loss where only the response tokens contribute to the loss calculation.
+This script loads a pre-trained model and fine-tunes it on instruction-following data.
 """
 
 import os
@@ -15,7 +14,6 @@ from torch.utils.tensorboard import SummaryWriter
 from src.config import GPTConfig, TrainConfig
 from src.models.gpt import GPTModel
 from src.data.dataloader import create_instruction_dataloader
-from src.training.plotting import plot_training_history
 from src.training.trainer import train_instruction_finetuning
 from src.utils.logging import get_logger
 
@@ -52,7 +50,12 @@ def main():
     gcfg = GPTConfig(**raw["model"])
     tcfg = TrainConfig(**raw["train"])
 
+    # Check if CUDA is available (Necessary for training)
     device = torch.device(tcfg.device if torch.cuda.is_available() else "cpu")
+    if device.type == "cpu":
+        logger.warning("CUDA is not available. Training will be slow.")
+        raise RuntimeError("CUDA is not available. Please check your GPU configuration.")
+
     logger.info(f"Using device: {device}")
 
     # Setup TensorBoard
@@ -152,9 +155,6 @@ def main():
     # Close TensorBoard writer
     writer.close()
     logger.info("TensorBoard logging completed")
-    
-    # Optional: Plot training history
-    # plot_training_history(train_loss, val_loss, step_numbers)
 
 
 if __name__ == "__main__":

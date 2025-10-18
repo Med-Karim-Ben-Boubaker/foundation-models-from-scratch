@@ -31,7 +31,7 @@ def main():
 
     logger.info("Model loaded successfully")
 
-    prompt = """### Instruction:\nGenerate a conversation between a customer and a tech support representative about resetting a password.\n\n### Input:Customer: I need to reset my password.\n\n### Response:\n"""
+    prompt = """### Instruction:\nHelp the user with any request they have.\n\n### Input: What is the capital of France?\n\n### Response:\n"""
 
     tokenizer = get_tokenizer()
     input_token_ids = text_to_token_ids(prompt, tokenizer)
@@ -46,7 +46,7 @@ def main():
         input_token_ids, 
         max_new_tokens, 
         gpt_config.context_length,
-        temperature=0.7,
+        temperature=0.0,
         top_p=0.95,
         top_k=0,
         repetition_penalty=1.15,
